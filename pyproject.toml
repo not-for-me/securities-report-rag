@@ -1,0 +1,35 @@
+[project]
+name = "securities-report-rag"
+version = "0.1.0"
+description = "증권사 리포트 RAG Slack Bot - PDF 파싱, 벡터DB 적재, Slack 자연어 QA"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-chroma>=0.2",
+    "chromadb>=0.6",
+    "slack-bolt>=1.21",
+    "httpx>=0.28",
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.9",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
