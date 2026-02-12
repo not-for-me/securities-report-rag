@@ -54,6 +54,7 @@ class ReportRetriever:
             document_contents=DOCUMENT_CONTENT_DESCRIPTION,
             metadata_field_info=_metadata_field_info(),
             enable_limit=True,
+            search_type="similarity_score_threshold",
             search_kwargs={"k": self.k, "score_threshold": self.score_threshold},
         )
 
@@ -71,4 +72,3 @@ class ReportRetriever:
             return [doc for doc, score in with_scores if score >= self.score_threshold]
         except Exception:  # noqa: BLE001 - vectorstore 구현별 fallback 허용
             return self.vectorstore.similarity_search(query, k=k)
-

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
@@ -7,6 +9,8 @@ from langchain_openai import ChatOpenAI
 from src.models import QAResult
 from src.rag.prompts import build_qa_prompt
 from src.rag.retriever import ReportRetriever
+
+logger = logging.getLogger(__name__)
 
 
 def format_documents_for_prompt(documents: list[Document]) -> str:
@@ -72,11 +76,18 @@ class ReportQAChain:
                 retrieved_documents=[],
             )
 
-        context = format_documents_for_prompt(documents)
-        answer = self.chain.invoke({"context": context, "question": question})
+        try:
+            context = format_documents_for_prompt(documents)
+            answer = self.chain.invoke({"context": context, "question": question})
+        except Exception as error:  # noqa: BLE001 - 외부 API 실패는 사용자 메시지로 변환한다.
+            logger.exception("Failed to generate QA answer: %s", error)
+            return QAResult(
+                answer="답변 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+                sources=[],
+                retrieved_documents=documents,
+            )
         return QAResult(
             answer=answer,
             sources=extract_sources(documents),
             retrieved_documents=documents,
         )
-
