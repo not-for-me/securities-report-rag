@@ -12,6 +12,7 @@ dependencies = [
     "slack-bolt>=1.21",
     "httpx>=0.28",
     "python-dotenv>=1.0",
+    "langchain-upstage>=0.7.6",
 ]
 
 [dependency-groups]
