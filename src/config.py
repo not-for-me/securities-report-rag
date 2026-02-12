@@ -34,6 +34,9 @@ class Settings:
     log_level: str
     upstage_parse_mode: str
     upstage_parse_endpoint: str
+    upstage_timeout_seconds: int
+    upstage_max_retries: int
+    upstage_retry_base_delay_seconds: float
 
     allowed_channel_ids: list[str]
     allowed_user_ids: list[str]
@@ -91,6 +94,9 @@ class Settings:
                 "UPSTAGE_PARSE_ENDPOINT",
                 "https://api.upstage.ai/v1/document-digitization",
             ),
+            upstage_timeout_seconds=int(os.getenv("UPSTAGE_TIMEOUT_SECONDS", "300")),
+            upstage_max_retries=int(os.getenv("UPSTAGE_MAX_RETRIES", "3")),
+            upstage_retry_base_delay_seconds=float(os.getenv("UPSTAGE_RETRY_BASE_DELAY_SECONDS", "2.0")),
             allowed_channel_ids=_split_csv(os.getenv("ALLOWED_CHANNEL_IDS")),
             allowed_user_ids=_split_csv(os.getenv("ALLOWED_USER_IDS")),
         )
@@ -99,4 +105,3 @@ class Settings:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings.from_env()
-
