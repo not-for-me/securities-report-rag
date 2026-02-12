@@ -217,7 +217,7 @@ def build_default_pipeline_runner(settings: Settings | None = None) -> PipelineR
     metadata_extractor = MetadataExtractor()
     chunker = ReportChunker(chunk_size=1000, chunk_overlap=200)
     embedder = ReportEmbedder(
-        openai_api_key=app_settings.openai_api_key or "",
+        api_key=app_settings.upstage_api_key or "",
         persist_directory=app_settings.chroma_persist_dir,
         collection_name=app_settings.chroma_collection_name,
         embedding_model=app_settings.embedding_model,

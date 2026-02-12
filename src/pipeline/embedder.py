@@ -6,7 +6,7 @@ from typing import Any
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
+from langchain_upstage import UpstageEmbeddings
 
 
 def generate_chunk_id(document_id: str, chunk_index: int) -> str:
@@ -26,17 +26,17 @@ class ReportEmbedder:
 
     def __init__(
         self,
-        openai_api_key: str,
+        api_key: str,
         *,
         persist_directory: str = "./data/chromadb",
         collection_name: str = "securities_reports",
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str = "embedding-query",
     ):
         self.persist_directory = persist_directory
         Path(self.persist_directory).mkdir(parents=True, exist_ok=True)
 
-        embeddings = OpenAIEmbeddings(
-            api_key=openai_api_key,
+        embeddings = UpstageEmbeddings(
+            api_key=api_key,
             model=embedding_model,
             dimensions=1536,
             max_retries=3,

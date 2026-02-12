@@ -56,6 +56,7 @@ class ReportQAChain:
         self.retriever = retriever
         self.prompt = build_qa_prompt()
         self.llm = ChatOpenAI(
+            base_url="https://api.bizrouter.ai/v1",
             api_key=openai_api_key,
             model=llm_model,
             temperature=0,
