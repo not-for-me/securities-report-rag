@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 from src.config import Settings, get_settings
@@ -11,9 +12,17 @@ from src.pipeline.chunker import ReportChunker
 from src.pipeline.embedder import ReportEmbedder
 from src.pipeline.metadata import MetadataExtractor
 from src.pipeline.parser import DocumentParser
-from src.pipeline.registry import MetadataRegistry, compute_file_hash
+from src.pipeline.registry import DocumentProcessingPlan, MetadataRegistry, compute_file_hash
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _ProcessContext:
+    document_id: str
+    file_hash: str
+    reprocess_reason: str
+    registry_snapshot: dict | None
 
 
 class PipelineRunner:
@@ -38,32 +47,40 @@ class PipelineRunner:
         self.parsed_dir.mkdir(parents=True, exist_ok=True)
 
     def run(self, pdf_paths: Iterable[str | Path] | None = None) -> PipelineResult:
-        targets = [Path(path) for path in pdf_paths] if pdf_paths else self.registry.get_documents_to_process()
+        plans = self._build_plans(pdf_paths=pdf_paths)
         success_count = 0
         failures: list[dict[str, str]] = []
 
-        for pdf_path in targets:
+        for plan in plans:
+            pdf_path = plan.pdf_path
             if not pdf_path.exists():
                 failures.append({"file": str(pdf_path), "error": "File does not exist"})
                 continue
 
             try:
-                self._process_one(pdf_path)
+                self._process_one(plan)
                 success_count += 1
             except Exception as error:  # noqa: BLE001 - 배치 파이프라인은 개별 실패를 수집한다.
-                logger.exception("Pipeline failed for %s", pdf_path.name)
+                logger.exception("Pipeline failed for %s (%s)", pdf_path.name, plan.reason)
                 failures.append({"file": pdf_path.name, "error": str(error)})
 
         return PipelineResult(
-            total=len(targets),
+            total=len(plans),
             success_count=success_count,
             failed_count=len(failures),
             failed_files=failures,
         )
 
-    def _process_one(self, pdf_path: Path) -> None:
-        document_id = self.registry.register_source_file(pdf_path)
+    def _process_one(self, plan: DocumentProcessingPlan) -> None:
+        pdf_path = plan.pdf_path
+        process = self._prepare_process_context(plan)
+        document_id = self.registry.register_source_file(
+            pdf_path,
+            file_hash=process.file_hash,
+            reprocess_reason=process.reprocess_reason,
+        )
         current_stage = "parsing"
+        vector_snapshot = None
 
         try:
             self.registry.update_status(document_id, "parsing")
@@ -87,29 +104,54 @@ class PipelineRunner:
 
             current_stage = "indexing"
             self.registry.update_status(document_id, "indexing")
-            vector_count = self.embedder.embed_and_store(documents)
+            vector_snapshot = self.embedder.snapshot_document(document_id)
+            vector_count = self.embedder.replace_document(document_id=document_id, documents=documents)
             self.registry.append_history(
                 document_id,
                 stage="indexed",
                 success=True,
                 vector_count=vector_count,
             )
-            self.registry.update_status(document_id, "indexed")
+            self.registry.mark_indexed(document_id, file_hash=process.file_hash, vector_count=vector_count)
         except Exception as error:  # noqa: BLE001
-            self.registry.append_history(
-                document_id,
-                stage=current_stage,
-                success=False,
-                error_message=str(error),
-            )
-            self.registry.update_status(document_id, "failed")
-
+            if current_stage == "indexing" and vector_snapshot is not None:
+                self.embedder.restore_snapshot(document_id=document_id, snapshot=vector_snapshot)
             if current_stage == "parsing":
                 self._cleanup_parsing_cache(document_id)
-            elif current_stage == "indexing":
-                self.embedder.delete_document(document_id)
+
+            if process.registry_snapshot and process.registry_snapshot.get("status") == "indexed":
+                self.registry.rollback_document(
+                    document_id,
+                    snapshot=process.registry_snapshot,
+                    stage=current_stage,
+                    error_message=str(error),
+                )
+            else:
+                self.registry.mark_failed(
+                    document_id,
+                    stage=current_stage,
+                    error_message=str(error),
+                    rolled_back=False,
+                )
 
             raise
+
+    def _build_plans(self, pdf_paths: Iterable[str | Path] | None) -> list[DocumentProcessingPlan]:
+        if pdf_paths is None:
+            return self.registry.plan_documents_to_process()
+        return [self.registry.plan_for_pdf(Path(path), reason_override="manual") for path in pdf_paths]
+
+    def _prepare_process_context(self, plan: DocumentProcessingPlan) -> _ProcessContext:
+        snapshot = self.registry.get_document_snapshot(plan.document_id)
+        reprocess_reason = plan.reason
+        if reprocess_reason == "up_to_date":
+            reprocess_reason = "manual"
+        return _ProcessContext(
+            document_id=plan.document_id,
+            file_hash=plan.file_hash,
+            reprocess_reason=reprocess_reason,
+            registry_snapshot=snapshot,
+        )
 
     def _load_or_parse(self, *, pdf_path: Path, document_id: str) -> ParseResult:
         markdown_path = self.parsed_dir / f"{document_id}.md"
@@ -168,6 +210,9 @@ def build_default_pipeline_runner(settings: Settings | None = None) -> PipelineR
         api_key=app_settings.upstage_api_key or "",
         endpoint=app_settings.upstage_parse_endpoint,
         parse_mode=app_settings.upstage_parse_mode,
+        timeout_seconds=app_settings.upstage_timeout_seconds,
+        max_retries=app_settings.upstage_max_retries,
+        base_retry_delay_seconds=app_settings.upstage_retry_base_delay_seconds,
     )
     metadata_extractor = MetadataExtractor()
     chunker = ReportChunker(chunk_size=1000, chunk_overlap=200)
@@ -187,4 +232,3 @@ def build_default_pipeline_runner(settings: Settings | None = None) -> PipelineR
         registry=registry,
         parsed_dir="data/parsed",
     )
-
