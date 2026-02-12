@@ -63,34 +63,62 @@ def register_handlers(
     allow_users = set(allowed_user_ids or [])
     rate_limiter = limiter or RateLimiter(max_requests=10, window_seconds=60)
 
+    @app.middleware
+    def log_incoming_event(
+        logger: logging.Logger,
+        body: dict[str, Any],
+        next: Callable[[], Any],  # noqa: A002
+    ) -> Any:
+        event = body.get("event")
+        if isinstance(event, dict):
+            logger.info(
+                "Slack event received type=%s channel=%s user=%s",
+                event.get("type"),
+                event.get("channel"),
+                event.get("user"),
+            )
+        return next()
+
     def _is_authorized(event: dict[str, Any], say: Callable[..., Any]) -> bool:
         channel_id = event.get("channel")
         user_id = event.get("user", "")
         if allow_channels and channel_id not in allow_channels:
+            logger.info("Ignored event from unauthorized channel channel=%s user=%s", channel_id, user_id)
             return False
         if allow_users and user_id not in allow_users:
+            logger.info("Blocked event from unauthorized user user=%s channel=%s", user_id, channel_id)
             say("이 Bot을 사용할 권한이 없습니다.")
             return False
         return True
 
     def _handle_question(event: dict[str, Any], say: Callable[..., Any]) -> None:
         if event.get("bot_id"):
+            logger.debug("Skipped bot-originated event channel=%s", event.get("channel"))
             return
+        logger.info(
+            "Processing question event_type=%s channel=%s user=%s",
+            event.get("type"),
+            event.get("channel"),
+            event.get("user"),
+        )
         if not _is_authorized(event, say):
             return
 
         user_id = event.get("user", "")
         if user_id and not rate_limiter.is_allowed(user_id):
+            logger.info("Rate limited user=%s", user_id)
             say("요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.")
             return
 
         question = extract_question(event.get("text", ""))
         validation_error = validate_query(question, max_length=MAX_QUERY_LENGTH)
         if validation_error:
+            logger.info("Validation error for user=%s: %s", user_id, validation_error)
             say(validation_error)
             return
 
         result = qa_chain.ask(question)
+        logger.info("Answer generated for user=%s", user_id)
         say(text=result.answer, blocks=format_response(result))
 
     @app.event("app_mention")
@@ -111,4 +139,3 @@ def register_handlers(
         except Exception as error:  # noqa: BLE001
             logger.exception("Failed to handle DM message: %s", error)
             say("죄송합니다. 요청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
-

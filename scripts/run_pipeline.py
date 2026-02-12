@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-from src.config import get_settings
-from src.logging_utils import configure_logging
-from src.pipeline.runner import build_default_pipeline_runner
+# Allow direct script execution: `python scripts/run_pipeline.py ...`
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def parse_args() -> argparse.Namespace:
@@ -21,6 +23,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    from src.config import get_settings
+    from src.logging_utils import configure_logging
+    from src.pipeline.runner import build_default_pipeline_runner
+
     args = parse_args()
     settings = get_settings()
     settings.validate_pipeline_settings()
@@ -40,4 +46,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

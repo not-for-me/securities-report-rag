@@ -53,6 +53,9 @@ class DocumentParser:
             raise DocumentParseError(f"Failed to call Upstage API: {error}") from error
 
         markdown = self._extract_markdown(payload)
+        if not markdown.strip():
+            raise DocumentParseError("Upstage 응답에서 markdown 본문을 추출하지 못했습니다.")
+
         metadata = {
             "api": payload.get("api"),
             "model": payload.get("model"),
@@ -154,6 +157,23 @@ class DocumentParser:
         # 일부 응답 포맷은 최상위 markdown 키를 사용한다.
         if payload.get("markdown"):
             return str(payload["markdown"])
+
+        # 일부 응답은 element 단위 markdown만 제공한다.
+        elements = payload.get("elements", [])
+        if isinstance(elements, list):
+            markdown_parts: list[str] = []
+            for element in elements:
+                if not isinstance(element, dict):
+                    continue
+                element_content = element.get("content", {})
+                if not isinstance(element_content, dict):
+                    continue
+                markdown = element_content.get("markdown")
+                if isinstance(markdown, str) and markdown.strip():
+                    markdown_parts.append(markdown.strip())
+
+            if markdown_parts:
+                return "\n\n".join(markdown_parts)
 
         logger.warning("Upstage 응답에서 markdown 본문을 찾지 못했습니다.")
         return ""
